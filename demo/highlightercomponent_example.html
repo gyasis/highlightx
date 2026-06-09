@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Highlighter Component Example</title>
+    <!-- Import the CSS from the component folder -->
+    <link rel="stylesheet" href="./highlighter-component/src/highlighter.css">
+    <style>
+        /* Page styles */
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            line-height: 1.5;
+            margin: 0;
+            padding: 1rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        .example-section {
+            position: relative; /* Important for pin positioning */
+            margin: 2rem 0;
+            padding: 2rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            background: white;
+            overflow: visible; /* Ensure pin is visible */
+        }
+
+        h1, h2 {
+            color: #1f2937;
+        }
+
+        /* Mobile-specific styles */
+        @media (max-width: 768px) {
+            .container {
+                padding: 0;
+            }
+
+            .example-section {
+                margin: 1rem 0;
+                padding: 1.5rem;
+            }
+
+            /* Make pin slightly larger on mobile for better touch targets */
+            .highlightable-pin {
+                width: 40px !important;
+                height: 40px !important;
+            }
+        }
+
+        /* Custom highlight colors for different sections */
+        .blue-theme {
+            --highlight-color: rgba(59, 130, 246, 0.2);
+            --button-color: #3b82f6;
+        }
+
+        .green-theme {
+            --highlight-color: rgba(16, 185, 129, 0.2);
+            --button-color: #10b981;
+        }
+
+        /* Make sure pins are visible */
+        .example-section .highlightable-pin {
+            opacity: 0.8;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .example-section:hover .highlightable-pin {
+            opacity: 1;
+        }
+
+        /* Touch device optimizations */
+        @media (hover: none) {
+            .example-section .highlightable-pin {
+                opacity: 1;
+            }
+
+            .highlightable-pin:active {
+                transform: scale(0.95);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Text Highlighter Examples</h1>
+
+        <!-- Example 0: Image Highlighter -->
+        <section class="example-section" id="imageSection">
+            <h2>Image Highlighter Example</h2>
+            <p>This example demonstrates the highlighter toolbar and highlight mode logic on an image. Click the pin to activate highlight mode. The toolbar will appear on hover or after activation. See the <a href="../README.md" target="_blank">README</a> for usage details.</p>
+            <img id="highlightableImage" src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=400&q=80" alt="Demo" style="max-width: 100%; border-radius: 0.5rem; border: 1px solid #e5e7eb; display: block; margin: 0 auto;" />
+        </section>
+
+        <!-- Example 1: Basic Usage -->
+        <section class="example-section" id="section1">
+            <h2>Basic Example</h2>
+            <p>This is a basic example of the highlighter component. Look for the pin icon in the bottom-right corner. Try clicking it to activate the highlighter.</p>
+            
+            <p>Once activated, you can select text in this box and highlight it. The pin will stay active until you click it again to deactivate the highlighter.</p>
+        </section>
+
+        <!-- Example 2: Custom Colors -->
+        <section class="example-section blue-theme" id="section2">
+            <h2>Custom Colors</h2>
+            <p>This example uses custom colors for the highlights and buttons. The highlighting color is blue-themed instead of the default yellow.</p>
+            
+            <p>You can customize the colors and other properties through the JavaScript API or CSS variables. This makes it easy to match your website's theme.</p>
+        </section>
+
+        <!-- Example 3: With Callbacks -->
+        <section class="example-section green-theme" id="section3">
+            <h2>Mobile-Friendly Example</h2>
+            <p>This example is optimized for mobile devices. The pin is slightly larger for better touch targets, and the highlighting behavior is adapted for touch screens.</p>
+            
+            <p>Try using this on your mobile device - the pin should be easy to tap, and text selection should work smoothly.</p>
+        </section>
+    </div>
+
+    <script type="module">
+        import { HighlighterDecorator } from '../src/HighlighterDecorator.js';
+
+        // Function to check if device is touch-enabled
+        const isTouchDevice = () => {
+            return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        };
+
+        // Initialize sections with highlighter
+        const sections = ['section1', 'section2', 'section3'].map(id => {
+            const element = document.getElementById(id);
+            const options = {
+                pinSize: isTouchDevice() ? 40 : 32, // Larger pin on touch devices
+                buttonText: 'Highlight',
+            };
+
+            // Add custom colors for different sections
+            if (id === 'section2') {
+                Object.assign(options, {
+                    pinColor: '#3b82f6',
+                    highlightColor: 'rgba(59, 130, 246, 0.2)'
+                });
+            } else if (id === 'section3') {
+                Object.assign(options, {
+                    pinColor: '#10b981',
+                    highlightColor: 'rgba(16, 185, 129, 0.2)'
+                });
+            }
+
+            return new HighlighterDecorator(element, options);
+        });
+
+        // Add touch-specific behavior
+        if (isTouchDevice()) {
+            document.documentElement.classList.add('touch-device');
+        }
+
+        // Image highlighter example
+        const img = document.getElementById('highlightableImage');
+        if (img) {
+            // Wrap the image in a div for pin/toolbar positioning
+            const wrapper = document.createElement('div');
+            wrapper.style.position = 'relative';
+            wrapper.style.display = 'inline-block';
+            img.parentNode.insertBefore(wrapper, img);
+            wrapper.appendChild(img);
+            new HighlighterDecorator(wrapper, {
+                pinColor: '#f59e42',
+                highlightColor: 'rgba(245, 158, 66, 0.2)',
+                pinPosition: 'top-right',
+                buttonText: 'Highlight Image',
+                pinSize: isTouchDevice() ? 40 : 32
+            });
+        }
+    </script>
+</body>
+</html> 

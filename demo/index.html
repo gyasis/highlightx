@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Highlighter Decorator Demo</title>
+    <link rel="stylesheet" href="../dist/highlighter.css">
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            color: #374151;
+            margin: 0;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .demo-section {
+            position: relative;
+            margin: 2rem 0;
+            padding: 2rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            background: white;
+        }
+
+        .instructions {
+            background: #f3f4f6;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .instructions h2 {
+            margin-top: 0;
+        }
+
+        .instructions ol {
+            margin: 0;
+            padding-left: 1.5rem;
+        }
+
+        .instructions li {
+            margin: 0.5rem 0;
+        }
+
+        h1 {
+            margin-bottom: 2rem;
+            color: #111827;
+        }
+
+        h2 {
+            color: #1f2937;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            margin: 1rem 0;
+            line-height: 1.7;
+        }
+
+        .sample-text {
+            font-size: 1.1rem;
+            color: #4b5563;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Highlighter Decorator Demo</h1>
+        
+        <div class="instructions">
+            <h2>Instructions</h2>
+            <ol>
+                <li>Look for the pin icon (
+) in the corner of each content box</li>
+                <li>Hover over the pin to see it animate</li>
+                <li>Click the pin to activate highlighting mode</li>
+                <li>Select text and use the highlight button that appears</li>
+                <li>Click the pin again to deactivate highlighting</li>
+            </ol>
+        </div>
+
+        <!-- Default Configuration -->
+        <section class="demo-section">
+            <h2>Default Configuration</h2>
+            <div class="sample-text">
+                <p>This example uses the default highlighter configuration with green theme. Try selecting some text after activating the highlighter. Notice how the superscript numbers appear neatly above the highlighted text.</p>
+                
+                <p>The numbers serve as reference points and can be clicked to navigate between highlights. They're designed to be unobtrusive while maintaining readability.</p>
+            </div>
+        </section>
+
+        <!-- Custom Colors -->
+        <section class="demo-section" id="blueSection">
+            <h2>Custom Colors</h2>
+            <div class="sample-text">
+                <p>This section demonstrates custom colors for both the highlights and the reference numbers. The blue theme provides a different visual style while maintaining the same functionality.</p>
+                
+                <p>You can customize various aspects including the highlight color, number color, and pin appearance to match your website's design.</p>
+            </div>
+        </section>
+
+        <!-- Advanced Features -->
+        <section class="demo-section" id="advancedSection">
+            <h2>Advanced Features</h2>
+            <div class="sample-text">
+                <p>This example shows advanced features like notes and navigation. After highlighting text, you can add notes, use keyboard shortcuts, and navigate between highlights using the controls or by clicking the reference numbers.</p>
+                
+                <p>The sidebar provides an overview of all highlights with their associated metadata and notes. Try the search feature to quickly find specific highlights.</p>
+            </div>
+        </section>
+    </div>
+
+    <script type="module">
+        import { HighlighterDecorator } from '../src/HighlighterDecorator.js';
+
+        // Default configuration
+        new HighlighterDecorator(document.querySelector('.demo-section'));
+
+        // Blue theme
+        new HighlighterDecorator(document.getElementById('blueSection'), {
+            pinColor: '#3b82f6',
+            highlightColor: 'rgba(59, 130, 246, 0.2)',
+            superscriptColor: '#3b82f6'
+        });
+
+        // Advanced features
+        new HighlighterDecorator(document.getElementById('advancedSection'), {
+            pinColor: '#8b5cf6',
+            highlightColor: 'rgba(139, 92, 246, 0.2)',
+            superscriptColor: '#8b5cf6',
+            enableNotes: true,
+            enableSearch: true,
+            enableSidebar: true
+        });
+    </script>
+</body>

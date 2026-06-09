@@ -1,0 +1,36 @@
+{
+  "name": "highlighter-decorator",
+  "version": "0.1.0",
+  "description": "A modern, customizable text-highlighting component with sidebar, notes, search, and export/import support.",
+  "type": "module",
+  "main": "dist/highlighter-decorator.umd.js",
+  "module": "dist/highlighter-decorator.esm.js",
+  "exports": {
+    ".": {
+      "import": "./dist/highlighter-decorator.esm.js",
+      "require": "./dist/highlighter-decorator.umd.js"
+    },
+    "./style.css": "./src/highlighter.css"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w"
+  },
+  "keywords": [
+    "highlighter",
+    "annotation",
+    "text-highlight",
+    "web-component",
+    "sidebar",
+    "notes"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "rollup": "^4.18.0"
+  }
+}
