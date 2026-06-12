@@ -1,3 +1,5 @@
+import { computeSegments, mostSpecific, pointToOffset, trimRange } from './core.js';
+
 export class HighlighterDecorator {
     constructor(element, options = {}) {
         this.element = element;
@@ -88,18 +90,7 @@ export class HighlighterDecorator {
     // character offset in the pristine base text — counting only real content, never
     // the inserted superscript marker digits.
     _pointToBaseOffset(container, offset) {
-        const pre = document.createRange();
-        pre.selectNodeContents(this.element);
-        try { pre.setEnd(container, offset); } catch (e) { return this._baseText.length; }
-        const frag = pre.cloneContents();
-        const w = document.createTreeWalker(frag, NodeFilter.SHOW_TEXT);
-        let count = 0, n;
-        while ((n = w.nextNode())) {
-            let el = n.parentElement, marker = false;
-            while (el) { if (el.classList && el.classList.contains(this.options.numberClassName)) { marker = true; break; } el = el.parentElement; }
-            if (!marker) count += n.nodeValue.length;
-        }
-        return count;
+        return pointToOffset(this.element, container, offset, this.options.numberClassName);
     }
 
     setupPin() {
@@ -723,11 +714,9 @@ export class HighlighterDecorator {
         let start = this._pointToBaseOffset(range.startContainer, range.startOffset);
         let end = this._pointToBaseOffset(range.endContainer, range.endOffset);
         if (end < start) { const t = start; start = end; end = t; }
-        // Trim whitespace at both ends: keeps the highlight on real text and, crucially,
-        // keeps the end marker out of inter-paragraph whitespace (which would drop the
-        // <sup> onto its own line between blocks).
-        while (start < end && /\s/.test(this._baseText[start])) start++;
-        while (end > start && /\s/.test(this._baseText[end - 1])) end--;
+        // Trim whitespace at both ends (shared core): keeps the highlight on real text
+        // and keeps the end marker out of inter-paragraph whitespace.
+        [start, end] = trimRange(this._baseText, start, end);
         if (end - start < 1) return;
 
         this.highlightCount++;
@@ -770,45 +759,40 @@ export class HighlighterDecorator {
         const tnodes = []; let pos = 0, n;
         while ((n = walker.nextNode())) { tnodes.push({ node: n, start: pos, end: pos + n.nodeValue.length }); pos += n.nodeValue.length; }
 
-        // Edit nodes back-to-front so earlier offsets stay valid.
+        // Edit nodes back-to-front so earlier offsets stay valid. Per text node we
+        // run the SHARED core (computeSegments) on the node's slice with highlights
+        // shifted to node-local offsets — same algorithm the Svelte renderer uses.
         for (let ti = tnodes.length - 1; ti >= 0; ti--) {
             const { node, start: ns, end: ne } = tnodes[ti];
-            const bounds = new Set([ns, ne]);
-            for (const h of this.highlights) {
-                if (h.start > ns && h.start < ne) bounds.add(h.start);
-                if (h.end > ns && h.end < ne) bounds.add(h.end);
-            }
-            const sorted = [...bounds].sort((a, b) => a - b);
+            const nodeText = text.slice(ns, ne);
+            const local = this.highlights.map(h => ({ number: h.number, start: h.start - ns, end: h.end - ns }));
+            const segs = computeSegments(nodeText, local);
             const frag = document.createDocumentFragment();
-            for (let k = 0; k < sorted.length - 1; k++) {
-                const a = sorted[k], b = sorted[k + 1];
-                const seg = text.slice(a, b);
-                const covering = this.highlights.filter(h => h.start <= a && h.end >= b);
-                if (covering.length) {
+            for (const s of segs) {
+                if (s.numbers.length) {
                     const mark = document.createElement('mark');
-                    mark.className = 'hl-mark' + (covering.length > 1 ? ' hl-overlap' : '');
-                    mark.setAttribute('data-hl', covering.map(h => h.number).join(' '));
-                    mark.textContent = seg;
+                    mark.className = 'hl-mark' + (s.numbers.length > 1 ? ' hl-overlap' : '');
+                    mark.setAttribute('data-hl', s.numbers.join(' '));
+                    mark.textContent = s.text;
+                    const coveringHls = s.numbers.map(num => this.highlights.find(h => h.number === num)).filter(Boolean);
                     mark.addEventListener('click', () => {
-                        // most-specific (smallest) covering highlight wins the click
-                        const most = covering.slice().sort((x, y) => (x.end - x.start) - (y.end - y.start))[0];
-                        this.handleHighlightClick(most.number);
+                        const most = mostSpecific(coveringHls);
+                        if (most) this.handleHighlightClick(most.number);
                     });
-                    covering.forEach(h => { if (!h.element) h.element = mark; });
+                    coveringHls.forEach(h => { if (!h.element) h.element = mark; });
                     frag.appendChild(mark);
                 } else {
-                    frag.appendChild(document.createTextNode(seg));
+                    frag.appendChild(document.createTextNode(s.text));
                 }
-                // Drop end-markers for highlights that end exactly here.
-                const ending = this.highlights.filter(h => h.end === b).sort((x, y) => x.number - y.number);
-                for (const h of ending) {
+                for (const num of s.ending) {
+                    const h = this.highlights.find(x => x.number === num);
                     const sup = this.options.renderNumber
-                        ? this.options.renderNumber(h.number, h)
+                        ? this.options.renderNumber(num, h)
                         : document.createElement(this.options.numberTag);
-                    if (!this.options.renderNumber) { sup.textContent = h.number; sup.className = this.options.numberClassName; }
-                    sup.setAttribute('data-n', h.number);
+                    if (!this.options.renderNumber) { sup.textContent = num; sup.className = this.options.numberClassName; }
+                    sup.setAttribute('data-n', num);
                     sup.addEventListener('click', (e) => { e.stopPropagation(); });
-                    sup.addEventListener('dblclick', (e) => { e.stopPropagation(); this.removeHighlightByNumber(h.number); });
+                    sup.addEventListener('dblclick', (e) => { e.stopPropagation(); this.removeHighlightByNumber(num); });
                     frag.appendChild(sup);
                 }
             }
