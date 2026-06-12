@@ -11,6 +11,15 @@ export class HighlighterDecorator {
             pinPosition: 'bottom-right',
             superscriptColor: '#10b981', // Color for the superscript number
             showNumbers: true,
+            // --- number presentation (constitution: lib renders, app may override) ---
+            numberTag: 'sup',                 // inline <sup> by default — flows with text, no absolute-badge overlap
+            numberClassName: 'highlight-number',
+            renderNumber: null,               // optional (number, highlight?) => HTMLElement — full app override of the marker
+            // --- app extension callbacks (constitution: app decides behavior) ---
+            onHighlightClick: null,           // (highlight) => void   — e.g. quiz opens the Tutor mini-lesson
+            onHighlightAdd: null,             // (highlight) => void
+            onHighlightRemove: null,          // (number) => void
+            onChange: null,                   // (highlights) => void  — app persists (e.g. per-language localStorage)
             enableNavigation: true,
             enableKeyboardShortcuts: true,
             enableSearch: true,
@@ -61,6 +70,36 @@ export class HighlighterDecorator {
         if (getComputedStyle(this.element).position === 'static') {
             this.element.style.position = 'relative';
         }
+        this._captureBase();
+    }
+
+    // Snapshot the pristine content ONCE — the offset model re-renders from this
+    // on every change, so overlapping highlights never corrupt the source text.
+    _captureBase() {
+        this._baseHTML = this.element.innerHTML;
+        const tmp = document.createElement('div');
+        tmp.innerHTML = this._baseHTML;
+        const w = document.createTreeWalker(tmp, NodeFilter.SHOW_TEXT);
+        let s = '', n; while ((n = w.nextNode())) s += n.nodeValue;
+        this._baseText = s;
+    }
+
+    // Map a (container, offset) point in the CURRENT (possibly highlighted) DOM to a
+    // character offset in the pristine base text — counting only real content, never
+    // the inserted superscript marker digits.
+    _pointToBaseOffset(container, offset) {
+        const pre = document.createRange();
+        pre.selectNodeContents(this.element);
+        try { pre.setEnd(container, offset); } catch (e) { return this._baseText.length; }
+        const frag = pre.cloneContents();
+        const w = document.createTreeWalker(frag, NodeFilter.SHOW_TEXT);
+        let count = 0, n;
+        while ((n = w.nextNode())) {
+            let el = n.parentElement, marker = false;
+            while (el) { if (el.classList && el.classList.contains(this.options.numberClassName)) { marker = true; break; } el = el.parentElement; }
+            if (!marker) count += n.nodeValue.length;
+        }
+        return count;
     }
 
     setupPin() {
@@ -245,6 +284,19 @@ export class HighlighterDecorator {
         }
     }
 
+    // Touch has no hover toolbar, so a long-press selection commits the highlight
+    // directly — mirrors the desktop mouseup path (only in highlight mode, same guard).
+    showHighlightButton() {
+        if (!this._highlightMode) return;
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+        if (!this.element.contains(selection.anchorNode)) return;
+        const t = selection.toString().trim();
+        if (t.split(/\s+/).length > 1 || t.length > 5) {
+            this.highlightSelection();
+        }
+    }
+
     generateStyles() {
         return `
             .highlight-wrapper {
@@ -254,32 +306,44 @@ export class HighlighterDecorator {
                 vertical-align: baseline;
             }
 
-            .highlight-content {
+            /* Offset model: flat <mark> segments. One mark may belong to several
+               highlights (data-hl="3 5"); overlap regions get a second tint layer. */
+            .hl-mark {
                 background-color: var(--highlight-color, ${this.options.highlightColor});
                 box-decoration-break: clone;
                 -webkit-box-decoration-break: clone;
                 border-radius: 0.1em;
-                padding: 0;
-                margin: 0;
+                color: inherit;
+                cursor: pointer;
             }
+            .hl-mark.hl-overlap {
+                /* stack another tint so overlapping highlights read as deeper */
+                box-shadow: inset 0 0 0 999px var(--highlight-color, ${this.options.highlightColor});
+            }
+            .hl-mark.active {
+                box-shadow: 0 0 0 2px var(--pin-color, ${this.options.pinColor});
+                border-radius: 0.2em;
+            }
+            /* highlights hidden when not in highlight mode */
+            .hl-suppressed .hl-mark { background: transparent; box-shadow: none; }
+            .hl-suppressed .${this.options.numberClassName} { display: none; }
 
             .highlight-number {
-                position: absolute;
-                top: -0.7em;
-                right: -0.5em;
-                font-size: 0.7em;
-                font-weight: bold;
+                /* Inline superscript — flows with the text (no absolute badge that
+                   overlaps the line above). vertical-align handled by <sup>. */
+                font-size: 0.62em;
+                font-weight: 800;
                 color: var(--superscript-color, ${this.options.superscriptColor});
-                background-color: white;
-                border-radius: 1em;
-                padding: 0.1em 0.3em;
+                margin: 0 1px 0 3px;            /* a tad more space on the left */
+                padding: 0 0.28em;
+                border: 1px solid color-mix(in srgb, var(--superscript-color, ${this.options.superscriptColor}) 40%, transparent);
+                border-radius: 0.45em;
                 line-height: normal;
-                box-shadow: 0 1px 2px rgba(0,0,0,0.1);
                 user-select: none;
                 cursor: pointer;
-                display: ${this.options.showNumbers ? 'block' : 'none'};
-                z-index: 1;
+                display: ${this.options.showNumbers ? 'inline' : 'none'};
             }
+            .highlight-number:hover { color: #ef4444; border-color: #ef4444; }
 
             .highlight-wrapper.active {
                 outline: none;
@@ -579,7 +643,8 @@ export class HighlighterDecorator {
             document.addEventListener('mouseup', this._highlightListener);
         } else {
             this.hideToolbar();
-            this.hideHighlights();
+            // NOTE: highlights stay visible when mode is off — they're persistent
+            // annotations. Mode only gates *creating* new highlights.
             // Remove mouseup listener
             if (this._highlightListener) {
                 document.removeEventListener('mouseup', this._highlightListener);
@@ -638,15 +703,11 @@ export class HighlighterDecorator {
     }
 
     showHighlights() {
-        this.highlights.forEach(h => {
-            h.element.style.display = '';
-        });
+        this.element.classList.remove('hl-suppressed');
     }
 
     hideHighlights() {
-        this.highlights.forEach(h => {
-            h.element.style.display = 'none';
-        });
+        this.element.classList.add('hl-suppressed');
     }
 
     highlightSelection() {
@@ -655,84 +716,103 @@ export class HighlighterDecorator {
 
         const range = selection.getRangeAt(0);
         if (!this.element.contains(range.commonAncestorContainer)) return;
+        if (this._baseHTML == null) this._captureBase();
 
-        try {
-            this.highlightCount++;
-            const highlightNumber = this.highlightCount;
+        // Offset model: map the selection to base character offsets. Overlap is fine —
+        // each highlight is an independent {number,start,end} record over the base text.
+        let start = this._pointToBaseOffset(range.startContainer, range.startOffset);
+        let end = this._pointToBaseOffset(range.endContainer, range.endOffset);
+        if (end < start) { const t = start; start = end; end = t; }
+        // Trim whitespace at both ends: keeps the highlight on real text and, crucially,
+        // keeps the end marker out of inter-paragraph whitespace (which would drop the
+        // <sup> onto its own line between blocks).
+        while (start < end && /\s/.test(this._baseText[start])) start++;
+        while (end > start && /\s/.test(this._baseText[end - 1])) end--;
+        if (end - start < 1) return;
 
-            // Helper to wrap a node in highlight markup
-            const wrapNode = (node) => {
-                const wrapper = document.createElement('span');
-                wrapper.className = 'highlight-wrapper';
-                wrapper.setAttribute('data-highlight-id', highlightNumber);
-                const content = document.createElement('span');
-                content.className = 'highlight-content';
-                content.appendChild(node);
-                const superscript = document.createElement('span');
-                superscript.textContent = highlightNumber;
-                superscript.className = 'highlight-number';
-                wrapper.appendChild(content);
-                wrapper.appendChild(superscript);
-                // Add click handlers
-                wrapper.addEventListener('click', () => this.handleHighlightClick(highlightNumber));
-                superscript.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.handleHighlightClick(highlightNumber);
-                });
-                superscript.addEventListener('dblclick', (e) => {
-                    e.stopPropagation();
-                    this.removeHighlightByNumber(highlightNumber);
-                });
-                if (this.options.enableNotes) {
-                    wrapper.setAttribute('data-note', '');
+        this.highlightCount++;
+        const h = {
+            number: this.highlightCount,
+            start, end,
+            text: this._baseText.slice(start, end),
+            timestamp: new Date().toISOString(),
+            username: this.options.username,
+            metadata: { ...this.metadata }
+        };
+        this.highlights.push(h);
+        selection.removeAllRanges();
+
+        this.renderHighlights();
+        this.updateNavigationControls();
+        this.updateSidebar();
+        if (this._highlightMode) this.showToolbar(true);
+        this.options.onHighlightAdd?.(h);
+        this._emitChange();
+    }
+
+    // Re-render the highlight layer from the pristine base, overlaying flat segments.
+    // A character range covered by N highlights becomes ONE <mark> listing all N
+    // numbers (overlap blends), and each highlight drops an inline <sup> at its end.
+    renderHighlights() {
+        if (this._baseHTML == null) this._captureBase();
+        this.element.innerHTML = this._baseHTML;
+        // The pin + toolbar live INSIDE this.element but aren't in the base snapshot,
+        // so the innerHTML reset just removed them — re-attach (same nodes, listeners
+        // intact) or the pin vanishes after the first highlight and mode can't toggle.
+        if (this.pin) this.element.appendChild(this.pin);
+        if (this.controls) this.element.appendChild(this.controls);
+        this.highlights.forEach(h => { h.element = null; });
+        if (!this.highlights.length) return;
+
+        const text = this._baseText;
+        // Map pristine text nodes to their base offsets.
+        const walker = document.createTreeWalker(this.element, NodeFilter.SHOW_TEXT);
+        const tnodes = []; let pos = 0, n;
+        while ((n = walker.nextNode())) { tnodes.push({ node: n, start: pos, end: pos + n.nodeValue.length }); pos += n.nodeValue.length; }
+
+        // Edit nodes back-to-front so earlier offsets stay valid.
+        for (let ti = tnodes.length - 1; ti >= 0; ti--) {
+            const { node, start: ns, end: ne } = tnodes[ti];
+            const bounds = new Set([ns, ne]);
+            for (const h of this.highlights) {
+                if (h.start > ns && h.start < ne) bounds.add(h.start);
+                if (h.end > ns && h.end < ne) bounds.add(h.end);
+            }
+            const sorted = [...bounds].sort((a, b) => a - b);
+            const frag = document.createDocumentFragment();
+            for (let k = 0; k < sorted.length - 1; k++) {
+                const a = sorted[k], b = sorted[k + 1];
+                const seg = text.slice(a, b);
+                const covering = this.highlights.filter(h => h.start <= a && h.end >= b);
+                if (covering.length) {
+                    const mark = document.createElement('mark');
+                    mark.className = 'hl-mark' + (covering.length > 1 ? ' hl-overlap' : '');
+                    mark.setAttribute('data-hl', covering.map(h => h.number).join(' '));
+                    mark.textContent = seg;
+                    mark.addEventListener('click', () => {
+                        // most-specific (smallest) covering highlight wins the click
+                        const most = covering.slice().sort((x, y) => (x.end - x.start) - (y.end - y.start))[0];
+                        this.handleHighlightClick(most.number);
+                    });
+                    covering.forEach(h => { if (!h.element) h.element = mark; });
+                    frag.appendChild(mark);
+                } else {
+                    frag.appendChild(document.createTextNode(seg));
                 }
-                return wrapper;
-            };
-
-            // Helper to recursively highlight text nodes in a fragment
-            const highlightFragment = (fragment) => {
-                const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT, null, false);
-                let textNodes = [];
-                let node;
-                while ((node = walker.nextNode())) {
-                    if (node.textContent.trim().length > 0) {
-                        textNodes.push(node);
-                    }
+                // Drop end-markers for highlights that end exactly here.
+                const ending = this.highlights.filter(h => h.end === b).sort((x, y) => x.number - y.number);
+                for (const h of ending) {
+                    const sup = this.options.renderNumber
+                        ? this.options.renderNumber(h.number, h)
+                        : document.createElement(this.options.numberTag);
+                    if (!this.options.renderNumber) { sup.textContent = h.number; sup.className = this.options.numberClassName; }
+                    sup.setAttribute('data-n', h.number);
+                    sup.addEventListener('click', (e) => { e.stopPropagation(); });
+                    sup.addEventListener('dblclick', (e) => { e.stopPropagation(); this.removeHighlightByNumber(h.number); });
+                    frag.appendChild(sup);
                 }
-                // Wrap each text node
-                textNodes.forEach(textNode => {
-                    const highlightSpan = wrapNode(textNode.cloneNode(true));
-                    textNode.parentNode.replaceChild(highlightSpan, textNode);
-                });
-            };
-
-            // Extract the contents of the range
-            const fragment = range.extractContents();
-            highlightFragment(fragment);
-            range.insertNode(fragment);
-
-            // Collect all new highlight wrappers for navigation, sidebar, etc.
-            const newHighlights = Array.from(this.element.querySelectorAll('.highlight-wrapper[data-highlight-id="' + highlightNumber + '"]'));
-            newHighlights.forEach(wrapper => {
-                this.highlights.push({
-                    element: wrapper,
-                    text: wrapper.innerText,
-                    number: highlightNumber,
-                    timestamp: new Date().toISOString(),
-                    username: this.options.username,
-                    metadata: { ...this.metadata }
-                });
-                // Hide highlight if not in highlight mode
-                if (!this._highlightMode) wrapper.style.display = 'none';
-            });
-
-            this.updateNavigationControls();
-            this.updateSidebar();
-            selection.removeAllRanges();
-            // Show toolbar when a highlight is made
-            if (this._highlightMode) this.showToolbar(true);
-        } catch (error) {
-            console.warn('Could not highlight selection:', error);
+            }
+            node.parentNode.replaceChild(frag, node);
         }
     }
 
@@ -750,9 +830,18 @@ export class HighlighterDecorator {
 
     handleHighlightClick(number) {
         const index = this.highlights.findIndex(h => h.number === number);
-        if (index !== -1) {
-            this.navigateToHighlight(index);
+        if (index === -1) return;
+        // Constitution: if the app handles clicks (e.g. open a Tutor lesson), defer to it.
+        if (this.options.onHighlightClick) {
+            this.options.onHighlightClick(this.highlights[index]);
+            return;
         }
+        this.navigateToHighlight(index);
+    }
+
+    // Fire the app's onChange with the current highlight set (constitution: app persists).
+    _emitChange() {
+        this.options.onChange?.(this.highlights);
     }
 
     navigateHighlight(direction) {
@@ -769,11 +858,11 @@ export class HighlighterDecorator {
     }
 
     navigateToHighlight(index) {
-        // Remove active class from all highlights
-        this.highlights.forEach(h => h.element.classList.remove('active'));
+        // Remove active class from all highlights (element may be null until rendered)
+        this.highlights.forEach(h => h.element && h.element.classList.remove('active'));
 
         const highlight = this.highlights[index];
-        if (highlight) {
+        if (highlight && highlight.element) {
             highlight.element.classList.add('active');
             highlight.element.scrollIntoView({
                 behavior: 'smooth',
@@ -797,34 +886,30 @@ export class HighlighterDecorator {
         const total = this.highlights.length;
         const current = this.currentHighlightIndex + 1;
 
-        prevBtn.disabled = total === 0;
-        nextBtn.disabled = total === 0;
-        counter.textContent = total === 0 ? '0/0' : `${current}/${total}`;
+        // Null-safe: a missing nav element must never abort highlightSelection()
+        // before the app callbacks (onHighlightAdd / onChange) fire.
+        if (prevBtn) prevBtn.disabled = total === 0;
+        if (nextBtn) nextBtn.disabled = total === 0;
+        if (counter) counter.textContent = total === 0 ? '0/0' : `${current}/${total}`;
     }
 
     toggleNumbers() {
         this.options.showNumbers = !this.options.showNumbers;
         const numbers = this.element.querySelectorAll('.highlight-number');
         numbers.forEach(num => {
-            num.style.display = this.options.showNumbers ? 'block' : 'none';
+            num.style.display = this.options.showNumbers ? 'inline' : 'none';
         });
     }
 
-    clearHighlights() {
-        // Only remove from DOM if called directly (not on deactivate)
-        this.highlights.forEach(({ element }) => {
-            if (element.parentNode) {
-                const text = element.textContent || '';
-                element.parentNode.replaceChild(
-                    document.createTextNode(text),
-                    element
-                );
-            }
-        });
+    clearHighlights({ emit = true } = {}) {
         this.highlights = [];
         this.highlightCount = 0;
         this.currentHighlightIndex = -1;
+        this.renderHighlights();        // restores the pristine base text
         this.updateNavigationControls();
+        // Don't emit when an import is about to repopulate (emit:false) — that would
+        // persist a spurious empty set over the app's saved highlights.
+        if (emit) this._emitChange();
     }
 
     toggleNotesPanel() {
@@ -977,8 +1062,8 @@ export class HighlighterDecorator {
     }
 
     loadHighlightsFromData(data) {
-        this.clearHighlights();
-        
+        this.clearHighlights({ emit: false });
+
         if (data.metadata) {
             this.metadata = { ...this.metadata, ...data.metadata };
         }
@@ -1071,8 +1156,7 @@ export class HighlighterDecorator {
             grouped[h.number].push(h);
         });
 
-        // Helper to remove superscript numbers from text (e.g., 
-, etc.)
+        // Helper to remove superscript numbers from text (e.g. ¹, ², ³, etc.)
         function stripSuperscripts(text) {
             // Unicode superscripts 1-9: \u00B9, \u00B2, \u00B3, \u2074-\u2079
             return text.replace(/[\u00B9\u00B2\u00B3\u2070-\u2079]/g, '');
@@ -1126,24 +1210,17 @@ export class HighlighterDecorator {
 
     removeHighlightByNumber(number) {
         const index = this.highlights.findIndex(h => h.number === number);
-        if (index !== -1) {
-            const { element } = this.highlights[index];
-            if (element.parentNode) {
-                // Only restore the original highlighted text, not the superscript
-                const content = element.querySelector('.highlight-content');
-                const text = content ? content.textContent : element.textContent || '';
-                element.parentNode.replaceChild(
-                    document.createTextNode(text),
-                    element
-                );
-            }
-            this.highlights.splice(index, 1);
-            // Adjust highlightCount and currentHighlightIndex if needed
-            if (this.currentHighlightIndex >= this.highlights.length) {
-                this.currentHighlightIndex = this.highlights.length - 1;
-            }
-            this.updateNavigationControls();
-            this.updateSidebar && this.updateSidebar();
-            this.updateNotesPanel && this.updateNotesPanel();
+        if (index === -1) return;
+        this.highlights.splice(index, 1);
+        if (this.currentHighlightIndex >= this.highlights.length) {
+            this.currentHighlightIndex = this.highlights.length - 1;
         }
+        this.renderHighlights();        // offset model: just re-render from base
+        this.updateNavigationControls();
+        this.updateSidebar && this.updateSidebar();
+        this.updateNotesPanel && this.updateNotesPanel();
+        // Notify the app (constitution).
+        this.options.onHighlightRemove?.(number);
+        this._emitChange();
     }
+}

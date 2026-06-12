@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>highlightx — playground</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0; color: #1f2937; background: #f8fafc; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: 1fr 320px; gap: 24px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #6b7280; font-size: 13px; margin: 0 0 16px; }
+  #content { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 22px 24px; }
+  #content p { margin: 0 0 14px; }
+  .panel { position: sticky; top: 24px; align-self: start; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #059669; margin: 0 0 8px; }
+  ol { margin: 0; padding-left: 18px; font-size: 13px; color: #374151; }
+  ol li { margin-bottom: 4px; }
+  #log { font: 12px/1.5 ui-monospace, monospace; background: #0f172a; color: #cbd5e1; border-radius: 8px; padding: 10px; height: 260px; overflow: auto; white-space: pre-wrap; }
+  #log .ev { color: #34d399; }
+  #log .rm { color: #f87171; }
+  #log .ch { color: #fbbf24; }
+  #state { font: 12px ui-monospace, monospace; color: #374151; }
+  button.mini { font-size: 12px; padding: 4px 10px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div>
+      <h1>highlightx playground</h1>
+      <p class="sub">Engine: rebuilt <code>dist/highlighter-decorator.esm.js</code> · inline-<code>&lt;sup&gt;</code> default · constitution callbacks wired to the log →</p>
+      <div id="content">
+        <p>The renal tubule reabsorbs the majority of filtered sodium, and the proximal convoluted tubule is responsible for the bulk of this reabsorption through active transport mechanisms. Select any phrase here to highlight it.</p>
+        <p>Hypokalemia is a lower-than-normal potassium concentration, whereas hyperkalemia is an elevated potassium concentration — note the opposite prefixes. The loop of Henle establishes the medullary concentration gradient essential for producing concentrated urine.</p>
+        <p>Aldosterone acts on the distal nephron to increase sodium reabsorption and potassium secretion. A dilatation of a vessel wall is called an aneurysm, which can rupture catastrophically if it enlarges beyond a critical diameter.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="card">
+        <h2>How to test</h2>
+        <ol>
+          <li>Click the green <b>pin</b> (bottom-right) to turn highlight mode ON.</li>
+          <li><b>Select a phrase</b> → it highlights with an inline <code>¹</code> superscript. Check the number flows with the text and does <b>not</b> overlap the line above.</li>
+          <li><b>Click a highlight</b> → watch <span style="color:#059669">onHighlightClick</span> fire in the log (this is the hook the quiz uses to open the Tutor).</li>
+          <li><b>Double-click the number</b> → removes that one (onHighlightRemove + onChange).</li>
+          <li>Tell me anything that looks off.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h2>Event log</h2>
+        <div id="log"></div>
+      </div>
+      <div class="card">
+        <h2>Persisted state (onChange)</h2>
+        <button class="mini" id="dump">log current highlights</button>
+        <div id="state" style="margin-top:8px">0 highlights</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { HighlighterDecorator } from '../dist/highlighter-decorator.esm.js';
+
+    const logEl = document.getElementById('log');
+    const stateEl = document.getElementById('state');
+    const stamp = () => new Date().toLocaleTimeString();
+    function log(cls, msg) {
+      const line = document.createElement('div');
+      line.className = cls;
+      line.textContent = `[${stamp()}] ${msg}`;
+      logEl.prepend(line);
+    }
+
+    const hl = new HighlighterDecorator(document.getElementById('content'), {
+      // inline <sup> is the new default; left explicit here so it's visible
+      numberTag: 'sup',
+      // constitution: the app decides behavior — here we just log
+      onHighlightClick:  (h) => log('ev', `onHighlightClick → #${h.number} "${h.text.slice(0,40)}"`),
+      onHighlightAdd:    (h) => log('ev', `onHighlightAdd → #${h.number} "${h.text.slice(0,40)}"`),
+      onHighlightRemove: (n) => log('rm', `onHighlightRemove → #${n}`),
+      onChange:          (hs) => {
+        log('ch', `onChange → ${hs.length} highlight(s)`);
+        stateEl.textContent = hs.length + ' highlights: ' + hs.map(h => `#${h.number}`).join(' ');
+      },
+    });
+
+    document.getElementById('dump').onclick = () =>
+      log('ch', 'dump → ' + JSON.stringify(hl.highlights.map(h => ({n:h.number, t:h.text.slice(0,24)}))));
+
+    log('ch', 'engine mounted — click the pin to start');
+    window.hl = hl; // for poking in devtools
+  </script>
+</body>
+</html>
